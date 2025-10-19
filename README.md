@@ -1,6 +1,6 @@
-# Hello World App - React + FastAPI + Supabase
+# Hello World App - htmx + FastAPI + Supabase
 
-A full-stack application boilerplate with React frontend, FastAPI backend, Supabase database, and Render deployment configuration.
+A full-stack application boilerplate with htmx frontend, FastAPI backend, Supabase database, and Render deployment configuration.
 
 ## Project Structure
 
@@ -9,13 +9,11 @@ base-app/
 ├── backend/
 │   ├── main.py              # FastAPI application
 │   ├── requirements.txt     # Python dependencies
+│   ├── templates/
+│   │   └── index.html      # Main htmx template
 │   └── .env.example        # Environment variables template
 ├── frontend/
-│   ├── src/
-│   │   ├── App.tsx         # Main React component
-│   │   └── supabaseClient.ts  # Supabase client config
-│   ├── package.json
-│   └── .env.example        # Environment variables template
+│   └── README.md           # Frontend documentation
 ├── render.yaml             # Render deployment config
 └── README.md
 ```
@@ -23,7 +21,6 @@ base-app/
 ## Prerequisites
 
 - Python 3.11+
-- Node.js 18+
 - A Supabase account and project
 - A Render account (for deployment)
 
@@ -68,30 +65,11 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env and add your Supabase credentials
 
-# Run the backend
+# Run the application
 uvicorn main:app --reload --port 8000
 ```
 
-The backend will be available at http://localhost:8000
-
-### 4. Frontend Setup
-
-```bash
-# In a new terminal
-cd frontend
-
-# Install dependencies
-npm install
-
-# Create .env file
-cp .env.example .env
-# Edit .env and add your Supabase credentials and API URL
-
-# Run the frontend
-npm start
-```
-
-The frontend will be available at http://localhost:3000
+The application will be available at http://localhost:8000
 
 ## Environment Variables
 
@@ -101,75 +79,56 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-supabase-anon-key
 ```
 
-### Frontend (.env)
-```
-REACT_APP_API_URL=http://localhost:8000
-REACT_APP_SUPABASE_URL=https://your-project.supabase.co
-REACT_APP_SUPABASE_ANON_KEY=your-supabase-anon-key
-```
-
 ## Deployment to Render
 
-### Option 1: Using render.yaml (Blueprint)
+### Deploy Web Service
 
 1. Push your code to GitHub
 2. Go to [Render Dashboard](https://dashboard.render.com)
-3. Click "New" > "Blueprint"
-4. Connect your GitHub repository
-5. Render will detect the `render.yaml` file and create both services
-6. Add environment variables in the Render dashboard for each service
-
-### Option 2: Manual Deployment
-
-#### Backend Service
-1. Go to Render Dashboard
-2. Click "New" > "Web Service"
-3. Connect your repository
-4. Configure:
-   - Name: `fastapi-backend`
+3. Click "New" > "Web Service"
+4. Connect your repository
+5. Configure:
+   - Name: `htmx-fastapi-app`
    - Runtime: `Python 3`
    - Build Command: `pip install -r backend/requirements.txt`
-   - Start Command: `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`
-5. Add environment variables:
+   - Start Command: `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
+6. Add environment variables:
    - `SUPABASE_URL`
    - `SUPABASE_KEY`
 
-#### Frontend Service
-1. Click "New" > "Static Site"
-2. Connect your repository
-3. Configure:
-   - Name: `react-frontend`
-   - Build Command: `cd frontend && npm install && npm run build`
-   - Publish Directory: `frontend/build`
-4. Add environment variables:
-   - `REACT_APP_API_URL` (your backend URL)
-   - `REACT_APP_SUPABASE_URL`
-   - `REACT_APP_SUPABASE_ANON_KEY`
-
-### Post-Deployment
-
-After deployment, update the frontend's `REACT_APP_API_URL` to point to your deployed backend URL.
+The entire application (frontend + backend) is now served from a single web service!
 
 ## API Endpoints
 
-- `GET /` - Hello world message
-- `GET /api/health` - Health check
-- `GET /api/data` - Fetch data from Supabase
+- `GET /` - Main application page (HTML)
+- `GET /api/health` - Health check (JSON)
+- `GET /api/message` - Backend message (HTML fragment)
+- `GET /api/data` - Fetch data from Supabase (HTML fragment)
 
 ## Features
 
-- React TypeScript frontend with Axios for API calls
-- FastAPI backend with CORS support
+- htmx for dynamic content without full page reloads
+- FastAPI backend serving HTML templates with Jinja2
 - Supabase integration for database
-- Ready for Render deployment
-- Environment-based configuration
+- No build process required - simple deployment
+- Single service deployment (no separate frontend/backend)
+- Much smaller footprint than React (htmx is ~14KB vs React ~140KB)
+
+## Benefits of htmx over React
+
+- **Simpler**: No complex build tooling, bundlers, or transpilers
+- **Smaller**: Dramatically reduced bundle size
+- **Faster**: Server-rendered HTML loads instantly
+- **Easier to deploy**: Single service instead of two
+- **Lower cost**: One Render service instead of two
+- **More maintainable**: Less JavaScript, more HTML
 
 ## Next Steps
 
 - Add authentication with Supabase Auth
-- Implement CRUD operations
+- Implement CRUD operations with htmx forms
 - Add proper error handling
-- Set up proper CORS origins for production
+- Add CSS framework (Tailwind, etc.)
 - Add tests
 - Configure CI/CD
 
