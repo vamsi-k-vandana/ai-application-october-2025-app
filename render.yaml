@@ -1,0 +1,29 @@
+services:
+  # Backend Service
+  - type: web
+    name: fastapi-backend
+    runtime: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.11.0
+    healthCheckPath: /api/health
+
+  # Frontend Service
+  - type: web
+    name: react-frontend
+    runtime: node
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: ./frontend/build
+    envVars:
+      - key: REACT_APP_API_URL
+        sync: false
+      - key: REACT_APP_SUPABASE_URL
+        sync: false
+      - key: REACT_APP_SUPABASE_ANON_KEY
+        sync: false
