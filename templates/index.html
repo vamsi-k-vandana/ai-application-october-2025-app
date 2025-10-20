@@ -111,7 +111,6 @@
 
         // Function to refresh both data sections
         function refreshData() {
-            htmx.ajax('GET', '/api/message', '#backend-message');
             htmx.ajax('GET', '/api/data', '#supabase-data');
         }
     </script>
