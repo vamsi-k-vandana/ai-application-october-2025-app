@@ -5,6 +5,7 @@ from fastapi.templating import Jinja2Templates
 from supabase import create_client, Client
 from pubnub.pnconfiguration import PNConfiguration
 from pubnub.pubnub import PubNub
+from openai import OpenAI
 import os
 import json
 
@@ -31,6 +32,10 @@ pnconfig.publish_key = pubnub_publish_key
 pnconfig.subscribe_key = pubnub_subscribe_key
 pnconfig.user_id = "server-instance"
 pubnub_client = PubNub(pnconfig)
+
+# OpenAI client
+openai_api_key = os.environ.get("OPENAI_API_KEY")
+openai_client = OpenAI(api_key=openai_api_key) if openai_api_key else None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -101,3 +106,41 @@ async def publish_message(channel: str, message: dict):
             "status": "error",
             "message": str(e)
         }
+
+
+@app.get("/chat", response_class=HTMLResponse)
+async def chat_page(request: Request):
+    """Render the chat page"""
+    return templates.TemplateResponse("chat.html", {"request": request})
+
+
+@app.post("/api/chat")
+async def chat(request: Request):
+    """Handle chat messages with OpenAI"""
+    if not openai_client:
+        return {
+            "error": "OpenAI API key not configured. Please add OPENAI_API_KEY to your .env file."
+        }
+
+    try:
+        body = await request.json()
+        user_message = body.get("message", "")
+
+        if not user_message:
+            return {"error": "No message provided"}
+
+        # Call OpenAI API
+        completion = openai_client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": user_message}
+            ]
+        )
+
+        response_message = completion.choices[0].message.content
+
+        return {"response": response_message}
+
+    except Exception as e:
+        return {"error": f"Error communicating with OpenAI: {str(e)}"}
