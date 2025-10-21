@@ -3,6 +3,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from supabase import create_client, Client
+from pubnub.pnconfiguration import PNConfiguration
+from pubnub.pubnub import PubNub
 import os
 import json
 
@@ -19,6 +21,16 @@ templates = Jinja2Templates(directory="templates")
 supabase_url = os.environ.get("SUPABASE_URL")
 supabase_key = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(supabase_url, supabase_key)
+
+# PubNub configuration
+pubnub_publish_key = os.environ.get("PUBNUB_PUBLISH_KEY", "demo")
+pubnub_subscribe_key = os.environ.get("PUBNUB_SUBSCRIBE_KEY", "demo")
+
+pnconfig = PNConfiguration()
+pnconfig.publish_key = pubnub_publish_key
+pnconfig.subscribe_key = pubnub_subscribe_key
+pnconfig.user_id = "server-instance"
+pubnub_client = PubNub(pnconfig)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -50,3 +62,42 @@ async def get_data():
         return HTMLResponse(data_html)
     except Exception as e:
         return HTMLResponse(f"<p>Error: {str(e)}</p>")
+
+
+@app.get("/pingpong", response_class=HTMLResponse)
+async def pingpong(request: Request):
+    """Render the PubNub ping pong page"""
+    return templates.TemplateResponse("pingpong.html", {
+        "request": request,
+        "pubnub_publish_key": pubnub_publish_key,
+        "pubnub_subscribe_key": pubnub_subscribe_key
+    })
+
+
+@app.get("/api/pubnub/config")
+async def get_pubnub_config():
+    """Returns PubNub configuration"""
+    return {
+        "publish_key": pubnub_publish_key,
+        "subscribe_key": pubnub_subscribe_key
+    }
+
+
+@app.post("/api/pubnub/publish/{channel}")
+async def publish_message(channel: str, message: dict):
+    """Publish a message to a PubNub channel"""
+    try:
+        envelope = pubnub_client.publish()\
+            .channel(channel)\
+            .message(message)\
+            .sync()
+
+        return {
+            "status": "success",
+            "timetoken": envelope.result.timetoken
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
