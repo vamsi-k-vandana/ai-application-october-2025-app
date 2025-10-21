@@ -144,3 +144,59 @@ async def chat(request: Request):
 
     except Exception as e:
         return {"error": f"Error communicating with OpenAI: {str(e)}"}
+
+
+@app.get("/resume", response_class=HTMLResponse)
+async def resume_page(request: Request):
+    """Render the resume parser page"""
+    return templates.TemplateResponse("resume.html", {"request": request})
+
+
+@app.post("/api/parse-resume")
+async def parse_resume(request: Request):
+    """Parse HTML resume/LinkedIn profile using OpenAI"""
+    if not openai_client:
+        return {
+            "error": "OpenAI API key not configured. Please add OPENAI_API_KEY to your .env file."
+        }
+
+    try:
+        body = await request.json()
+        html_content = body.get("html_content", "")
+
+        if not html_content:
+            return {"error": "No HTML content provided"}
+
+        # Create a prompt to parse the resume
+        system_prompt = """You are a resume parser. Extract and format the key information from HTML content (from LinkedIn profiles or resumes) into a clean, well-structured format.
+
+Focus on extracting:
+- Name
+- Contact information (email, phone, location)
+- Professional summary/headline
+- Work experience (company, title, dates, responsibilities)
+- Education (school, degree, dates)
+- Skills
+- Certifications (if any)
+- Projects (if any)
+
+Format the output as clean markdown with clear sections and bullet points. Remove any HTML tags, navigation elements, or extraneous information. Make it concise and professional."""
+
+        user_prompt = f"Please parse and format this resume/profile HTML:\n\n{html_content}"
+
+        # Call OpenAI API
+        completion = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3
+        )
+
+        parsed_resume = completion.choices[0].message.content
+
+        return {"parsed_resume": parsed_resume}
+
+    except Exception as e:
+        return {"error": f"Error parsing resume: {str(e)}"}
