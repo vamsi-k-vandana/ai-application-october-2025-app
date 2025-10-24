@@ -108,6 +108,18 @@ async def publish_message(channel: str, message: dict):
         }
 
 
+def query_rag_content(query_embedding, match_content, document_type):
+  rag_results = supabase.rpc(
+            'match_documents_by_document_type',
+            {
+                'query_embedding': query_embedding,
+                'match_count': match_content,
+                'query_document_type': document_type
+            }
+        ).execute()
+  return rag_results
+
+
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request):
     """Render the chat page"""
@@ -116,7 +128,7 @@ async def chat_page(request: Request):
 
 @app.post("/api/chat")
 async def chat(request: Request):
-    """Handle chat messages with OpenAI"""
+    """Handle chat messages with OpenAI and RAG"""
     if not openai_client:
         return {
             "error": "OpenAI API key not configured. Please add OPENAI_API_KEY to your .env file."
@@ -129,20 +141,51 @@ async def chat(request: Request):
         if not user_message:
             return {"error": "No message provided"}
 
-        # Call OpenAI API
+        # Generate embedding for the user message
+        embedding_response = openai_client.embeddings.create(
+            input=user_message,
+            model='text-embedding-3-small'
+        )
+        query_embedding = embedding_response.data[0].embedding
+
+        # Query rag_content table with cosine distance to get top 10 results
+        rag_results = supabase.rpc(
+            'match_documents_by_document_type',
+            {
+                'query_embedding': query_embedding,
+                'match_count': 10,
+                'query_document_type': 'job'
+            }
+        ).execute()
+
+        # Extract context from RAG results
+        context_items = []
+        if rag_results.data:
+            for item in rag_results.data:
+                if item['similarity'] > .3:
+                    context_items.append(item.get('context', ''))
+
+        print(len(context_items))
+        # Build context string
+        rag_context = "\n\n".join(context_items) if context_items else "No relevant context found."
+
+        # Call OpenAI API with RAG context
         completion = openai_client.chat.completions.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are a senior data engineer who has mastered data engineering. Be very brief"},
+                {"role": "system", "content": f"You are a senior data engineer who has mastered data engineering. Use the following context to answer questions:\n\n{rag_context}"},
                 {"role": "user", "content": user_message}
             ],
-            max_tokens=50,
+            max_tokens=300,
             temperature=0
         )
 
         response_message = completion.choices[0].message.content
 
-        return {"response": response_message}
+        return {
+            "response": response_message,
+            "rag_results": rag_results.data if rag_results.data else []
+        }
 
     except Exception as e:
         return {"error": f"Error communicating with OpenAI: {str(e)}"}
@@ -154,8 +197,14 @@ async def resume_page(request: Request):
     return templates.TemplateResponse("resume.html", {"request": request})
 
 
-@app.post("/api/parse-resume")
-async def parse_resume(request: Request):
+@app.get("/resume-with-matching", response_class=HTMLResponse)
+async def resume_with_matching_page(request: Request):
+    """Render the resume parser page"""
+    return templates.TemplateResponse("resume_with_matching.html", {"request": request})
+
+
+@app.post('/api/parse-resume-with-matching')
+async def parse_resume_with_matching(request: Request):
     """Parse HTML resume/LinkedIn profile using OpenAI"""
     if not openai_client:
         return {
@@ -220,6 +269,7 @@ Format the output as clean JSON"""
 
         user_prompt = f"Please parse and format this resume into JSON:\n\n{html_content}\n\n"
 
+        print('user prompt is', user_prompt)
         # Call OpenAI API
         completion = openai_client.chat.completions.create(
             model="gpt-4o",
@@ -311,12 +361,204 @@ Format the output as clean JSON"""
             ]
         )
 
-        parsed_resume = completion.choices[0].message.content
+        parsed_resume = completion.choices[0].message.tool_calls[0].function.arguments
+        embedding_response = openai_client.embeddings.create(
+            input=parsed_resume,
+            model='text-embedding-3-small'
+        )
+        query_embedding = embedding_response.data[0].embedding
+
+        jobs = query_rag_content(query_embedding, 10, 'job')
+        profile = query_rag_content(query_embedding, 10, 'profile')
+
+        job_items = []
+        if jobs.data:
+            for item in jobs.data:
+                if item['similarity'] > .3:
+                    job_items.append(item.get('context', ''))
+
+        profile_items = []
+        if profile.data:
+            for item in profile.data:
+                if item['similarity'] > .3:
+                    profile_items.append(item.get('context', ''))
+
+        insert_resume(json.loads(parsed_resume))
+
+        return {"parsed_resume": parsed_resume, 'jobs': job_items, 'profiles': profile_items}
+
+    except Exception as e:
+        print(str(e))
+        return {"error": f"Error parsing resume: {str(e)}"}
+
+
+
+@app.post("/api/parse-resume")
+async def parse_resume(request: Request):
+    """Parse HTML resume/LinkedIn profile using OpenAI"""
+    if not openai_client:
+        return {
+            "error": "OpenAI API key not configured. Please add OPENAI_API_KEY to your .env file."
+        }
+
+    try:
+        body = await request.json()
+        html_content = body.get("html_content", "")
+
+        if not html_content:
+            return {"error": "No HTML content provided"}
+
+        # Create a prompt to parse the resume
+        system_prompt = """You are a resume parser. Extract and format the key information from HTML content (from LinkedIn profiles or resumes) into only a JSON format. 
+        Remove any HTML tags, navigation elements, or extraneous information.
+Focus on extracting:
+{
+"name": "Random Name",
+"contact_information": {
+"location": "Bay Area"
+},
+"professional_summary": "Data Engineer @ Meta",
+"work_experience": [
+{
+"company": "Meta",
+"title": "Engineer",
+"startDate": "May 2025",
+"endDate": "Present",
+"responsibilities": "I wrote pipelines"
+}
+],
+"education": [
+{
+"school": "Stanford",
+"degree": "Bachelor's Degree, Computer Science",
+"startDate": "Not specified",
+"endDate": "Not specified"
+}
+],
+"skills": [
+"Big Data",
+"Machine Learning"
+],
+"certifications": [
+{
+"name": "Databricks Certified Professional",
+"issuer": "Databricks",
+"date": "Nov 2015"
+}
+],
+"projects": [
+{
+"name": "Some Github Repo",
+"dates": "Nov 2023 - Present",
+"description": "A list of repos or something",
+"associated_with": "DataExpert.io"
+}
+]
+}
+Format the output as clean JSON"""
+
+        user_prompt = f"Please parse and format this resume into JSON:\n\n{html_content}\n\n"
+
+        print('user prompt is', user_prompt)
+        # Call OpenAI API
+        completion = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0,
+            response_format={"type": "json_object"},
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "parse_resume",
+                        "description": "Parse resume text into a structured schema with work experience, education, skills, certifications, and projects.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string", "description": "Full name of the person"},
+                                "contact_information": {
+                                    "type": "object",
+                                    "properties": {
+                                        "location": {"type": "string"}
+                                    },
+                                    "required": ["location"]
+                                },
+                                "professional_summary": {"type": "string"},
+                                "work_experience": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "company": {"type": "string"},
+                                            "title": {"type": "string"},
+                                            "startDate": {"type": "string"},
+                                            "endDate": {"type": "string"},
+                                            "responsibilities": {"type": "string"}
+                                        },
+                                        "required": ["company", "title"]
+                                    }
+                                },
+                                "education": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "school": {"type": "string"},
+                                            "degree": {"type": "string"},
+                                            "startDate": {"type": "string"},
+                                            "endDate": {"type": "string"}
+                                        },
+                                        "required": ["school", "degree"]
+                                    }
+                                },
+                                "skills": {
+                                    "type": "array",
+                                    "items": {"type": "string"}
+                                },
+                                "certifications": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {"type": "string"},
+                                            "issuer": {"type": "string"},
+                                            "date": {"type": "string"}
+                                        },
+                                        "required": ["name", "issuer"]
+                                    }
+                                },
+                                "projects": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {"type": "string"},
+                                            "dates": {"type": "string"},
+                                            "description": {"type": "string"},
+                                            "associated_with": {"type": "string"}
+                                        },
+                                        "required": ["name"]
+                                    }
+                                }
+                            },
+                            "required": ["name", "contact_information", "professional_summary"]
+                        }
+                    }
+                }
+            ]
+        )
+
+        parsed_resume = completion.choices[0].message.tool_calls[0].function.arguments
+
         insert_resume(json.loads(parsed_resume))
 
         return {"parsed_resume": parsed_resume}
 
     except Exception as e:
+        print(str(e))
         return {"error": f"Error parsing resume: {str(e)}"}
 
 
