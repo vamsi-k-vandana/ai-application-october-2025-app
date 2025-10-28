@@ -6,11 +6,9 @@ Analyzes PR changes and posts review comments directly to GitHub
 
 import os
 import sys
-import json
-from typing import List, Dict, Optional
-from github import Github, GithubException
+from typing import List, Optional
+from github import Github
 from openai import OpenAI
-
 
 class GitHubPRReviewer:
     def __init__(
@@ -25,7 +23,7 @@ class GitHubPRReviewer:
         self.openai_client = OpenAI(api_key=openai_api_key)
         self.model = model
         self.repository_name = repository or os.getenv("GITHUB_REPOSITORY")
-        self.pr_number = pr_number or self._get_pr_number()
+        self.pr_number = pr_number
 
         if not self.repository_name:
             raise ValueError("Repository not specified and GITHUB_REPOSITORY env var not set")
@@ -36,24 +34,6 @@ class GitHubPRReviewer:
         self.repo = self.github_client.get_repo(self.repository_name)
         self.pull_request = self.repo.get_pull(self.pr_number)
 
-    def _get_pr_number(self) -> Optional[int]:
-        """Extract PR number from GITHUB_REF environment variable"""
-        github_ref = os.getenv("GITHUB_REF", "")
-        # Format: refs/pull/:prNumber/merge
-        if "/pull/" in github_ref:
-            try:
-                return int(github_ref.split("/")[2])
-            except (IndexError, ValueError):
-                pass
-        return None
-
-    def get_pr_files(self) -> List:
-        """Get list of changed files in the PR"""
-        return list(self.pull_request.get_files())
-
-    def get_file_diff(self, file_obj) -> str:
-        """Extract the patch/diff for a file"""
-        return file_obj.patch or ""
 
     def review_code_with_ai(self, filename: str, diff: str, file_content: Optional[str] = None) -> Optional[str]:
         """Send code to OpenAI for review"""
@@ -96,18 +76,6 @@ At the end, make sure to grade the pull request and suggest whether it is ready 
             print(f"Error calling OpenAI API: {e}", file=sys.stderr)
             return None
 
-    def post_review_comment(self, body: str) -> None:
-        """Post a review comment on the PR"""
-        self.pull_request.create_issue_comment(body)
-
-    def post_review(self, comments: List[Dict], review_body: str) -> None:
-        """Post a complete review with inline comments"""
-        self.pull_request.create_review(
-            body=review_body,
-            event="COMMENT",
-            comments=comments
-        )
-
     def should_review_file(self, filename: str, exclude_patterns: List[str]) -> bool:
         """Check if file should be reviewed based on exclude patterns"""
         for pattern in exclude_patterns:
@@ -131,7 +99,7 @@ At the end, make sure to grade the pull request and suggest whether it is ready 
         print(f"Starting AI code review for PR #{self.pr_number} in {self.repository_name}")
 
         # Get changed files
-        files = self.get_pr_files()
+        files = list(self.pull_request.get_files())
         print(f"Found {len(files)} changed files")
 
         reviewed_files = []
@@ -151,7 +119,7 @@ At the end, make sure to grade the pull request and suggest whether it is ready 
                 continue
 
             # Get diff
-            diff = self.get_file_diff(file_obj)
+            diff = file_obj.patch or ''
             if not diff:
                 print(f"Skipping {filename} (no diff)")
                 continue
@@ -169,7 +137,7 @@ At the end, make sure to grade the pull request and suggest whether it is ready 
         if review_summary:
             summary = "## AI Code Review\n\n" + "\n\n---\n\n".join(review_summary)
             summary += f"\n\n---\n*Reviewed by {self.model}*"
-            self.post_review_comment(summary)
+            self.pull_request.create_issue_comment(summary)
             print(f"Review posted successfully for {len(reviewed_files)} files")
         else:
             print("No files to review")
