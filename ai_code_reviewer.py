@@ -8,7 +8,7 @@ import os
 import sys
 import json
 from typing import List, Dict, Optional
-import requests
+from github import Github, GithubException
 from openai import OpenAI
 
 
@@ -21,17 +21,20 @@ class GitHubPRReviewer:
         repository: Optional[str] = None,
         pr_number: Optional[int] = None,
     ):
-        self.github_token = github_token
+        self.github_client = Github(github_token)
         self.openai_client = OpenAI(api_key=openai_api_key)
         self.model = model
-        self.repository = repository or os.getenv("GITHUB_REPOSITORY")
+        self.repository_name = repository or os.getenv("GITHUB_REPOSITORY")
         self.pr_number = pr_number or self._get_pr_number()
-        self.api_base = "https://api.github.com"
 
-        if not self.repository:
+        if not self.repository_name:
             raise ValueError("Repository not specified and GITHUB_REPOSITORY env var not set")
         if not self.pr_number:
             raise ValueError("PR number not specified and could not be determined from environment")
+
+        # Get the repository and pull request objects
+        self.repo = self.github_client.get_repo(self.repository_name)
+        self.pull_request = self.repo.get_pull(self.pr_number)
 
     def _get_pr_number(self) -> Optional[int]:
         """Extract PR number from GITHUB_REF environment variable"""
@@ -44,36 +47,13 @@ class GitHubPRReviewer:
                 pass
         return None
 
-    def _make_github_request(
-        self, method: str, endpoint: str, data: Optional[Dict] = None
-    ) -> Dict:
-        """Make authenticated request to GitHub API"""
-        headers = {
-            "Authorization": f"token {self.github_token}",
-            "Accept": "application/vnd.github.v3+json",
-        }
-        url = f"{self.api_base}{endpoint}"
-
-        if method.upper() == "GET":
-            response = requests.get(url, headers=headers)
-        elif method.upper() == "POST":
-            response = requests.post(url, headers=headers, json=data)
-        elif method.upper() == "PATCH":
-            response = requests.patch(url, headers=headers, json=data)
-        else:
-            raise ValueError(f"Unsupported HTTP method: {method}")
-
-        response.raise_for_status()
-        return response.json() if response.content else {}
-
-    def get_pr_files(self) -> List[Dict]:
+    def get_pr_files(self) -> List:
         """Get list of changed files in the PR"""
-        endpoint = f"/repos/{self.repository}/pulls/{self.pr_number}/files"
-        return self._make_github_request("GET", endpoint)
+        return list(self.pull_request.get_files())
 
-    def get_file_diff(self, file_info: Dict) -> str:
+    def get_file_diff(self, file_obj) -> str:
         """Extract the patch/diff for a file"""
-        return file_info.get("patch", "")
+        return file_obj.patch or ""
 
     def review_code_with_ai(self, filename: str, diff: str, file_content: Optional[str] = None) -> Optional[str]:
         """Send code to OpenAI for review"""
@@ -118,19 +98,16 @@ At the end, make sure to grade the pull request and suggest whether it is ready 
 
     def post_review_comment(self, body: str) -> None:
         """Post a review comment on the PR"""
-        endpoint = f"/repos/{self.repository}/issues/{self.pr_number}/comments"
-        data = {"body": body}
-        self._make_github_request("POST", endpoint, data)
+        issue = self.repo.get_issue(self.pr_number)
+        issue.create_comment(body)
 
     def post_review(self, comments: List[Dict], review_body: str) -> None:
         """Post a complete review with inline comments"""
-        endpoint = f"/repos/{self.repository}/pulls/{self.pr_number}/reviews"
-        data = {
-            "body": review_body,
-            "event": "COMMENT",
-            "comments": comments
-        }
-        self._make_github_request("POST", endpoint, data)
+        self.pull_request.create_review(
+            body=review_body,
+            event="COMMENT",
+            comments=comments
+        )
 
     def should_review_file(self, filename: str, exclude_patterns: List[str]) -> bool:
         """Check if file should be reviewed based on exclude patterns"""
@@ -152,7 +129,7 @@ At the end, make sure to grade the pull request and suggest whether it is ready 
         """Main review process"""
         exclude_patterns = exclude_patterns or []
 
-        print(f"Starting AI code review for PR #{self.pr_number} in {self.repository}")
+        print(f"Starting AI code review for PR #{self.pr_number} in {self.repository_name}")
 
         # Get changed files
         files = self.get_pr_files()
@@ -161,8 +138,8 @@ At the end, make sure to grade the pull request and suggest whether it is ready 
         reviewed_files = []
         review_summary = []
 
-        for file_info in files:
-            filename = file_info["filename"]
+        for file_obj in files:
+            filename = file_obj.filename
 
             # Check if file should be reviewed
             if not self.should_review_file(filename, exclude_patterns):
@@ -170,12 +147,12 @@ At the end, make sure to grade the pull request and suggest whether it is ready 
                 continue
 
             # Skip deleted files
-            if file_info["status"] == "removed":
+            if file_obj.status == "removed":
                 print(f"Skipping {filename} (deleted)")
                 continue
 
             # Get diff
-            diff = self.get_file_diff(file_info)
+            diff = self.get_file_diff(file_obj)
             if not diff:
                 print(f"Skipping {filename} (no diff)")
                 continue
