@@ -94,7 +94,11 @@ Please provide:
 3. Security concerns
 4. Best practice suggestions
 
-Be concise and actionable. If the code looks good, say so briefly. Focus on meaningful improvements."""
+Be concise and actionable. If the code looks good, say so briefly and do not mention the small issues.
+
+At the end, make sure to grade the pull request and suggest whether it is ready to merge
+
+"""
 
         try:
             response = self.openai_client.chat.completions.create(
