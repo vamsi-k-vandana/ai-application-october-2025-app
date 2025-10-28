@@ -108,6 +108,30 @@ The entire application is now served from a single web service!
 - `/chat` - For chatbot
 - `/pingpong` - For Pubnub testing
 
+## GitHub Actions
+
+### LLM Code Review
+
+This repository includes an automated AI-powered code review workflow that runs on every pull request.
+
+**Setup:**
+
+1. Add your OpenAI API key as a repository secret:
+   - Go to Settings > Secrets and variables > Actions
+   - Click "New repository secret"
+   - Name: `OPENAI_API_KEY`
+   - Value: Your OpenAI API key
+
+**How it works:**
+
+- Triggers automatically on pull request events (opened, synchronized, reopened)
+- Reviews only code files (.py, .js, .ts, .jsx, .tsx, .go, .java, .sql)
+- Uses GPT-4o-mini for cost-effective reviews
+- Posts review comments directly on the PR
+- Provides a summary in the Actions tab
+
+**Workflow file:** `.github/workflows/llm-code-review.yml`
+
 ## License
 
 MIT

@@ -1,0 +1,59 @@
+name: LLM Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  llm-code-review:
+    runs-on: ubuntu-latest
+    name: AI-Powered Code Review
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v41
+        with:
+          files: |
+            **/*.py
+            **/*.js
+            **/*.ts
+            **/*.jsx
+            **/*.tsx
+            **/*.go
+            **/*.java
+            **/*.sql
+
+      - name: AI Code Review with OpenAI
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: freeedcom/ai-codereviewer@v2
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_MODEL: "gpt-4o-mini"
+          exclude: "**/*.json,**/*.md,**/*.txt,**/package-lock.json,**/yarn.lock,**/uv.lock"
+
+      - name: Summary
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          echo "### AI Code Review Completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Reviewed files:" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | while read file; do
+            echo "- $file" >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: No changes to review
+        if: steps.changed-files.outputs.any_changed != 'true'
+        run: |
+          echo "### No code changes to review" >> $GITHUB_STEP_SUMMARY
+          echo "This PR does not contain any code files that require review." >> $GITHUB_STEP_SUMMARY
