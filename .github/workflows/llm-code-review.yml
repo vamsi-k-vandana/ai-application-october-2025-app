@@ -35,7 +35,7 @@ jobs:
 
       - name: AI Code Review with OpenAI
         if: steps.changed-files.outputs.any_changed == 'true'
-        uses: freeedcom/ai-codereviewer@v2
+        uses: EcZachly/ai-codereviewer@main
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
