@@ -6,6 +6,7 @@ Analyzes PR changes and posts review comments directly to GitHub
 
 import os
 import sys
+import json
 from typing import List, Optional
 from github import Github
 from openai import OpenAI
@@ -23,7 +24,7 @@ class GitHubPRReviewer:
         self.openai_client = OpenAI(api_key=openai_api_key)
         self.model = model
         self.repository_name = repository or os.getenv("GITHUB_REPOSITORY")
-        self.pr_number = pr_number
+        self.pr_number = pr_number or self._get_pr_number_from_env()
 
         if not self.repository_name:
             raise ValueError("Repository not specified and GITHUB_REPOSITORY env var not set")
@@ -34,6 +35,17 @@ class GitHubPRReviewer:
         self.repo = self.github_client.get_repo(self.repository_name)
         self.pull_request = self.repo.get_pull(self.pr_number)
 
+    def _get_pr_number_from_env(self) -> Optional[int]:
+        """Extract PR number from GitHub Actions environment variables"""
+        # Try getting from GITHUB_REF (format: refs/pull/123/merge)
+        github_ref = os.getenv("GITHUB_REF", "")
+        if github_ref.startswith("refs/pull/"):
+            try:
+                pr_num = int(github_ref.split("/")[2])
+                return pr_num
+            except (IndexError, ValueError):
+                pass
+        return None
 
     def review_code_with_ai(self, filename: str, diff: str, file_content: Optional[str] = None) -> Optional[str]:
         """Send code to OpenAI for review"""
