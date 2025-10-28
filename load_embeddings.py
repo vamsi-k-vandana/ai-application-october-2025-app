@@ -119,6 +119,10 @@ def load_jobs_into_rag(file_path: str, user_id: int = 1):
             "user_id": user_id,
             "document_type": "job"
         }
+
+        while True:
+            print('blah')
+            
         print(data)
         try:
             supabase.table("rag_content").upsert(data).execute()
