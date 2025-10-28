@@ -89,6 +89,23 @@ Summary: {profile.get('summary', 'N/A')}
 LinkedIn: {profile.get('linkedin_url', 'N/A')}"""
 
 
+def load_vectors_into_supabase(id, embedding, context, user_id, document_type):
+    # Insert into Supabase
+        data = {
+            "id": id,
+            "embedding": embedding,
+            "context": context,
+            "user_id": user_id,
+            "document_type": document_type
+        }
+
+        try:
+            supabase.table("rag_content").upsert(data).execute()
+            print(f"  ✓ Inserted job {id}")
+        except Exception as e:
+            print(f"  ✗ Error inserting vectors {id}: {e}")
+
+
 def load_jobs_into_rag(file_path: str, user_id: int = 1):
     """
     Load job postings from a JSON file into the rag_content table.
@@ -107,25 +124,9 @@ def load_jobs_into_rag(file_path: str, user_id: int = 1):
         context = format_job_context(job)
 
         print(f"Processing job {i+1}/{len(jobs)}: {job.get('title', 'Unknown')}...")
-
         # Generate embedding
         embedding = get_embedding(context)
-
-        # Insert into Supabase
-        data = {
-            "id": job_id,
-            "embedding": embedding,
-            "context": context,
-            "user_id": user_id,
-            "document_type": "job"
-        }
-
-        print(data)
-        try:
-            supabase.table("rag_content").upsert(data).execute()
-            print(f"  ✓ Inserted job {job_id}")
-        except Exception as e:
-            print(f"  ✗ Error inserting job {job_id}: {e}")
+        load_vectors_into_supabase(job_id, embedding, context, user_id, "job")
 
     print(f"Completed loading {len(jobs)} jobs.\n")
 
@@ -148,24 +149,9 @@ def load_profiles_into_rag(file_path: str, user_id: int = 1):
         context = format_profile_context(profile)
 
         print(f"Processing profile {i+1}/{len(profiles)}: {profile.get('name', 'Unknown')}...")
-
         # Generate embedding
         embedding = get_embedding(context)
-
-        # Insert into Supabase
-        data = {
-            "id": profile_id,
-            "embedding": embedding,
-            "context": context,
-            "user_id": user_id,
-            "document_type": "profile"
-        }
-
-        try:
-            supabase.table("rag_content").upsert(data).execute()
-            print(f"  ✓ Inserted profile {profile_id}")
-        except Exception as e:
-            print(f"  ✗ Error inserting profile {profile_id}: {e}")
+        load_vectors_into_supabase(profile_id, embedding, context, user_id, "profile")
 
     print(f"Completed loading {len(profiles)} profiles.\n")
 
