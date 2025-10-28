@@ -98,8 +98,7 @@ At the end, make sure to grade the pull request and suggest whether it is ready 
 
     def post_review_comment(self, body: str) -> None:
         """Post a review comment on the PR"""
-        issue = self.repo.get_pull(self.pr_number)
-        issue.create_comment(body)
+        self.pull_request.create_issue_comment(body)
 
     def post_review(self, comments: List[Dict], review_body: str) -> None:
         """Post a complete review with inline comments"""
