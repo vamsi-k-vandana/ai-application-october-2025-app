@@ -63,6 +63,7 @@ class GitHubPRReviewer:
         # 1 is the context check match_documents_by_document_type.sql
         #  Make sure to also cross check repos
         for memory in memory_context:
+            print(memory)
             memory_filename = memory[0].split('-')[-1]
             if memory_filename == filename:
                 previous_changes.append(memory[1])
