@@ -59,9 +59,11 @@ class GitHubPRReviewer:
         memory_context = query_rag_content(filename_embedding, 10, 'pr_chunk')
         previous_changes = []
 
+        # 0 is id
+        # 1 is the context check match_documents_by_document_type.sql
         for memory in memory_context:
-            if memory['id'] == id:
-                previous_changes.append(memory['context'])
+            if memory[0] == id:
+                previous_changes.append(memory[1])
 
 
         previous_changes_str = '<PREVIOUS_CHANGE>'.join(previous_changes)
