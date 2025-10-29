@@ -67,7 +67,7 @@ class GitHubPRReviewer:
             if data_list:
                 for data in data_list:
                     memory_filename = data['id'].split('-')[-1]
-                    if memory_filename == filename:
+                    if memory_filename == filename and data['id'] != id:
                         previous_changes.append(data['context'])
 
         print(previous_changes)
