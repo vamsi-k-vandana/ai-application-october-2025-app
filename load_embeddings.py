@@ -89,14 +89,15 @@ Summary: {profile.get('summary', 'N/A')}
 LinkedIn: {profile.get('linkedin_url', 'N/A')}"""
 
 
-def load_vectors_into_supabase(id, embedding, context, user_id, document_type):
+def load_vectors_into_supabase(id, embedding, context, user_id, document_type, **kwargs):
     # Insert into Supabase
         data = {
             "id": id,
             "embedding": embedding,
             "context": context,
             "user_id": user_id,
-            "document_type": document_type
+            "document_type": document_type,
+            **kwargs
         }
 
         try:

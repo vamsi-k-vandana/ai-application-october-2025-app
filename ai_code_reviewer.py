@@ -10,6 +10,7 @@ import json
 from typing import List, Optional
 from github import Github
 from openai import OpenAI
+from load_embeddings import load_vectors_into_supabase, get_embedding
 
 class GitHubPRReviewer:
     def __init__(
@@ -25,6 +26,8 @@ class GitHubPRReviewer:
         self.model = model
         self.repository_name = repository or os.getenv("GITHUB_REPOSITORY")
         self.pr_number = pr_number or self._get_pr_number_from_env()
+        self.document_id = self.repository_name + '/pulls/' + str(self.pr_number)
+
 
         if not self.repository_name:
             raise ValueError("Repository not specified and GITHUB_REPOSITORY env var not set")
@@ -34,6 +37,7 @@ class GitHubPRReviewer:
         # Get the repository and pull request objects
         self.repo = self.github_client.get_repo(self.repository_name)
         self.pull_request = self.repo.get_pull(self.pr_number)
+
 
     def _get_pr_number_from_env(self) -> Optional[int]:
         """Extract PR number from GitHub Actions environment variables"""
@@ -83,7 +87,21 @@ At the end, make sure to grade the pull request and suggest whether it is ready 
                 max_tokens=1000,
             )
 
-            return response.choices[0].message.content.strip()
+            response = response.choices[0].message.content.strip()
+
+            context = f"""
+            File Name:{filename}
+            Diff: {diff} 
+            AI Response: {response}
+            """
+            id = self.document_id + '-' + filename
+            embedding = get_embedding(context)
+
+            load_vectors_into_supabase(id, embedding, context, 1, 'pr_chunk',
+                                       document_id=self.document_id,
+                                       username=self.pull_request.user.url
+                                       )
+            return response
         except Exception as e:
             print(f"Error calling OpenAI API: {e}", file=sys.stderr)
             return None

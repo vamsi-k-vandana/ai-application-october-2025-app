@@ -35,6 +35,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REF: ${{ secrets.GITHUB_REF }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           OPENAI_API_MODEL: "gpt-4o-mini"
           EXCLUDE: "**/*.json,**/*.md,**/*.txt,**/package-lock.json,**/yarn.lock,**/uv.lock"
         run: |
