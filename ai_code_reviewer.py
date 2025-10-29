@@ -101,7 +101,7 @@ At the end, make sure to grade the pull request and suggest whether it is ready 
                                        document_id=self.document_id,
                                        username=self.pull_request.user.url
                                        )
-
+            return response
         except Exception as e:
             print(f"Error calling OpenAI API: {e}", file=sys.stderr)
             return None
