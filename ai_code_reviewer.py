@@ -11,6 +11,7 @@ from typing import List, Optional
 from github import Github
 from openai import OpenAI
 from load_embeddings import load_vectors_into_supabase, get_embedding
+from supabase_lib import query_rag_content
 
 class GitHubPRReviewer:
     def __init__(
@@ -52,11 +53,28 @@ class GitHubPRReviewer:
         return None
 
     def review_code_with_ai(self, filename: str, diff: str, file_content: Optional[str] = None) -> Optional[str]:
+
+        id = self.document_id + '-' + filename
+        filename_embedding = get_embedding(filename + diff)
+        memory_context = query_rag_content(filename_embedding, 10, 'pr_chunk')
+        previous_changes = []
+
+        for memory in memory_context:
+            if memory['id'] == id:
+                previous_changes.append(memory['context'])
+
+
+        previous_changes_str = '<PREVIOUS_CHANGE>'.join(previous_changes)
+
+
         """Send code to OpenAI for review"""
         if not diff.strip():
             return None
 
         prompt = f"""You are an expert code reviewer. Review the following code changes and provide constructive feedback.
+
+Remember to keep in mind the previous changes to this file which are:
+{previous_changes_str}. Make sure to mention the story line of how this file has changed and make remarks on any big diffs
 
 File: {filename}
 Diff:
@@ -94,7 +112,7 @@ At the end, make sure to grade the pull request and suggest whether it is ready 
             Diff: {diff} 
             AI Response: {response}
             """
-            id = self.document_id + '-' + filename
+
             embedding = get_embedding(context)
 
             load_vectors_into_supabase(id, embedding, context, 1, 'pr_chunk',

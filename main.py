@@ -9,6 +9,7 @@ from openai import OpenAI
 import os
 import json
 
+from supabase_lib import query_rag_content
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -106,18 +107,6 @@ async def publish_message(channel: str, message: dict):
             "status": "error",
             "message": str(e)
         }
-
-
-def query_rag_content(query_embedding, match_content, document_type):
-  rag_results = supabase.rpc(
-            'match_documents_by_document_type',
-            {
-                'query_embedding': query_embedding,
-                'match_count': match_content,
-                'query_document_type': document_type
-            }
-        ).execute()
-  return rag_results
 
 
 @app.get("/chat", response_class=HTMLResponse)
