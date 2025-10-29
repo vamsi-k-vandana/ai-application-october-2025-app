@@ -71,15 +71,16 @@ class GitHubPRReviewer:
         previous_changes_str = '<PREVIOUS_CHANGE>'.join(previous_changes)
 
 
+        previous_changes_prompt = f"""      
+        Remember to keep in mind the previous changes to this file which are:
+{previous_changes_str}. Make sure to mention the story line of how this file has changed and make remarks on any big diffs
+        """ if len(previous_changes) > 0 else ''
         """Send code to OpenAI for review"""
         if not diff.strip():
             return None
 
         prompt = f"""You are an expert code reviewer. Review the following code changes and provide constructive feedback.
-
-Remember to keep in mind the previous changes to this file which are:
-{previous_changes_str}. Make sure to mention the story line of how this file has changed and make remarks on any big diffs
-
+{previous_changes_prompt}
 File: {filename}
 Diff:
 ```
