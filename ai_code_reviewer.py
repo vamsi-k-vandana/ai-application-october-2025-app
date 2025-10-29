@@ -95,6 +95,7 @@ Please provide:
 2. Code quality improvements
 3. Security concerns
 4. Best practice suggestions
+5. A history of the changes to this file if they are provided
 
 Be concise and actionable. If the code looks good, say so briefly and do not mention the small issues.
 
