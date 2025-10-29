@@ -71,7 +71,7 @@ class GitHubPRReviewer:
                         context = data['context']
                         print(context.index('Diff'))
                         print(context.index('AI Response'))
-                        diff_context = context[context.index('Diff'), context.index('AI Response')]
+                        diff_context = context[context.index('Diff'):context.index('AI Response')]
                         print(diff_context)
                         previous_changes.append(diff_context)
 
