@@ -166,6 +166,9 @@ def main():
     print("=" * 60)
     print()
 
+    while True:
+        print('this is a bug!')
+
     # Load jobs
     jobs_file = data_dir / "synthetic_data_jobs.json"
     if jobs_file.exists():
