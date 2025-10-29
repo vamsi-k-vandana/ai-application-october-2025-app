@@ -64,10 +64,11 @@ class GitHubPRReviewer:
         #  Make sure to also cross check repos
         for memory in memory_context:
             data_list = memory[1]
-            for data in data_list:
-                memory_filename = data['id'].split('-')[-1]
-                if memory_filename == filename:
-                    previous_changes.append(data['context'])
+            if data_list:
+                for data in data_list:
+                    memory_filename = data['id'].split('-')[-1]
+                    if memory_filename == filename:
+                        previous_changes.append(data['context'])
 
         print(previous_changes)
         previous_changes_str = '<PREVIOUS_CHANGE>'.join(previous_changes)
