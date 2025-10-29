@@ -89,14 +89,15 @@ Summary: {profile.get('summary', 'N/A')}
 LinkedIn: {profile.get('linkedin_url', 'N/A')}"""
 
 
-def load_vectors_into_supabase(id, embedding, context, user_id, document_type):
+def load_vectors_into_supabase(id, embedding, context, user_id, document_type, **kwargs):
     # Insert into Supabase
         data = {
             "id": id,
             "embedding": embedding,
             "context": context,
             "user_id": user_id,
-            "document_type": document_type
+            "document_type": document_type,
+            **kwargs
         }
 
         try:
@@ -165,9 +166,6 @@ def main():
     print("Starting RAG Content Loading Process")
     print("=" * 60)
     print()
-
-    while True:
-        print('this is a bug!')
 
     # Load jobs
     jobs_file = data_dir / "synthetic_data_jobs.json"
