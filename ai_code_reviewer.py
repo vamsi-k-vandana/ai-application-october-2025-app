@@ -68,7 +68,9 @@ class GitHubPRReviewer:
                 for data in data_list:
                     memory_filename = data['id'].split('-')[-1]
                     if memory_filename == filename and data['id'] != id:
-                        previous_changes.append(data['context'])
+                        context = data['context']
+                        previous_changes.append(
+                            context.substr(context.index('Diff'), context.index('AI Response')))
 
         print(previous_changes)
         previous_changes_str = '<PREVIOUS_CHANGE>'.join(previous_changes)
