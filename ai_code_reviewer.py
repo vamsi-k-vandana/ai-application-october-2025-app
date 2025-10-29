@@ -67,7 +67,7 @@ class GitHubPRReviewer:
             if memory_filename == filename:
                 previous_changes.append(memory[1])
 
-
+        print(previous_changes)
         previous_changes_str = '<PREVIOUS_CHANGE>'.join(previous_changes)
 
 
@@ -98,7 +98,7 @@ Be concise and actionable. If the code looks good, say so briefly and do not men
 At the end, make sure to grade the pull request and suggest whether it is ready to merge
 
 """
-
+        print(prompt)
         try:
             response = self.openai_client.chat.completions.create(
                 model=self.model,
