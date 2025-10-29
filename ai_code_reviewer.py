@@ -11,6 +11,7 @@ from typing import List, Optional
 from github import Github
 from openai import OpenAI
 from load_embeddings import load_vectors_into_supabase, get_embedding
+from supabase_lib import query_rag_content
 
 class GitHubPRReviewer:
     def __init__(
@@ -52,12 +53,24 @@ class GitHubPRReviewer:
         return None
 
     def review_code_with_ai(self, filename: str, diff: str, file_content: Optional[str] = None) -> Optional[str]:
-        """Send code to OpenAI for review"""
-        if not diff.strip():
-            return None
 
+        id = self.document_id + '-' + filename
+        filename_embedding = get_embedding(filename + diff)
+        memory_context = query_rag_content(filename_embedding, 10, 'pr_chunk')
+        previous_changes = []
+
+        if memory_context.data:
+            for data in memory_context.data:
+                memory_filename = data['id'].split('-')[-1]
+                if memory_filename == filename and data['id'] != id:
+                    context = data['context']
+                    diff_context = context[context.index('Diff'):context.index('AI Response')]
+                    previous_changes.append(diff_context)
+
+        previous_changes_str = '<PREVIOUS_CHANGE>'.join(previous_changes)
+        previous_changes_prompt = f"""Historical Changes: {previous_changes_str or 'None'}"""
         prompt = f"""You are an expert code reviewer. Review the following code changes and provide constructive feedback.
-
+{previous_changes_prompt}
 File: {filename}
 Diff:
 ```
@@ -69,13 +82,14 @@ Please provide:
 2. Code quality improvements
 3. Security concerns
 4. Best practice suggestions
+5. A history of the changes to this file if they are provided
 
 Be concise and actionable. If the code looks good, say so briefly and do not mention the small issues.
 
 At the end, make sure to grade the pull request and suggest whether it is ready to merge
 
 """
-
+        print(prompt)
         try:
             response = self.openai_client.chat.completions.create(
                 model=self.model,
@@ -83,7 +97,7 @@ At the end, make sure to grade the pull request and suggest whether it is ready 
                     {"role": "system", "content": "You are an expert code reviewer providing constructive feedback on code changes."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
+                temperature=0,
                 max_tokens=1000,
             )
 
@@ -94,7 +108,7 @@ At the end, make sure to grade the pull request and suggest whether it is ready 
             Diff: {diff} 
             AI Response: {response}
             """
-            id = self.document_id + '-' + filename
+
             embedding = get_embedding(context)
 
             load_vectors_into_supabase(id, embedding, context, 1, 'pr_chunk',
