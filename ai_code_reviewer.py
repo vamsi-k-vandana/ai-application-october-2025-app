@@ -59,23 +59,14 @@ class GitHubPRReviewer:
         memory_context = query_rag_content(filename_embedding, 10, 'pr_chunk')
         previous_changes = []
 
-        # 0 is id
-        # 1 is the context check match_documents_by_document_type.sql
-        #  Make sure to also cross check repos
-        for memory in memory_context:
-            data_list = memory[1]
-            if data_list:
-                for data in data_list:
-                    memory_filename = data['id'].split('-')[-1]
-                    if memory_filename == filename and data['id'] != id:
-                        context = data['context']
-                        print(context.index('Diff'))
-                        print(context.index('AI Response'))
-                        diff_context = context[context.index('Diff'):context.index('AI Response')]
-                        print(diff_context)
-                        previous_changes.append(diff_context)
+        if memory_context.data:
+            for data in memory_context.data:
+                memory_filename = data['id'].split('-')[-1]
+                if memory_filename == filename and data['id'] != id:
+                    context = data['context']
+                    diff_context = context[context.index('Diff'):context.index('AI Response')]
+                    previous_changes.append(diff_context)
 
-        print(previous_changes)
         previous_changes_str = '<PREVIOUS_CHANGE>'.join(previous_changes)
 
 
@@ -115,7 +106,7 @@ At the end, make sure to grade the pull request and suggest whether it is ready 
                     {"role": "system", "content": "You are an expert code reviewer providing constructive feedback on code changes."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
+                temperature=0,
                 max_tokens=1000,
             )
 
