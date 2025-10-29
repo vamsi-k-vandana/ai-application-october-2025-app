@@ -70,7 +70,7 @@ class GitHubPRReviewer:
                     if memory_filename == filename and data['id'] != id:
                         context = data['context']
                         previous_changes.append(
-                            context.substr(context.index('Diff'), context.index('AI Response')))
+                            context[context.index('Diff'), context.index('AI Response')])
 
         print(previous_changes)
         previous_changes_str = '<PREVIOUS_CHANGE>'.join(previous_changes)
