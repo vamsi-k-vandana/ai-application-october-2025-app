@@ -16,3 +16,16 @@ def query_rag_content(query_embedding, match_content, document_type):
             }
         ).execute()
   return rag_results
+
+def query_rag_content_many_types(query_embedding, match_count, document_types):
+    # Query rag_content table with cosine distance using dynamic match_count
+    # Use the new array-based function
+    rag_results = supabase.rpc(
+        'match_documents_by_document_types_array',
+        {
+            'query_embedding': query_embedding,
+            'match_count': match_count,
+            'query_document_types': document_types
+        }
+    ).execute()
+    return rag_results

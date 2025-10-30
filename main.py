@@ -9,7 +9,7 @@ from openai import OpenAI
 import os
 import json
 
-from supabase_lib import query_rag_content
+from supabase_lib import query_rag_content, query_rag_content_many_types
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -115,6 +115,94 @@ async def chat_page(request: Request):
     return templates.TemplateResponse("chat.html", {"request": request})
 
 
+def classify_document_type(user_message: str) -> list:
+    """
+    Uses OpenAI to classify the user's query into the appropriate document_type(s).
+    Returns: list of document types - ['job'], ['profile'], or ['job', 'profile'] if uncertain
+    """
+    classification_prompt = """You are a document classifier. Analyze the user's query and determine if they are asking about:
+- 'job': job postings, job requirements, job descriptions, career opportunities, positions
+- 'profile': candidate profiles, resumes, skills, experience, people
+- 'both': if the query is ambiguous or could relate to both jobs and profiles
+
+Respond with ONLY one word: 'job', 'profile', or 'both'."""
+
+    try:
+        classification_response = openai_client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": classification_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            max_tokens=10,
+            temperature=0
+        )
+
+        classification = classification_response.choices[0].message.content.strip().lower()
+
+        # Map classification to document types array
+        if classification == 'job':
+            document_types = ['job']
+        elif classification == 'profile':
+            document_types = ['profile']
+        elif classification == 'both':
+            document_types = ['job', 'profile']
+        else:
+            print(f"Warning: Unexpected classification '{classification}', searching all document types")
+            document_types = ['job', 'profile']
+
+        print(f"Classified query as document_types: {document_types}")
+        return document_types
+    except Exception as e:
+        print(f"Error classifying document type: {str(e)}, searching all document types")
+        return ['job', 'profile']
+
+
+def determine_optimal_top_k(user_message: str) -> int:
+    """
+    Uses OpenAI to determine the optimal number of documents to retrieve (top-k)
+    based on the query's complexity, specificity, and scope.
+
+    Returns: integer between 3 and 20 representing the optimal number of documents to retrieve
+    """
+    top_k_prompt = """You are a retrieval optimization expert. Analyze the user's query and determine the optimal number of documents to retrieve (top-k value).
+
+Consider:
+- **Specific queries** (e.g., "What is the salary for Software Engineer at Google?") → Lower k (3-5)
+- **Broad/exploratory queries** (e.g., "Tell me about all engineering roles") → Higher k (15-20)
+- **Moderate complexity** (e.g., "What skills do senior data engineers need?") → Medium k (8-12)
+- **Comparison queries** (e.g., "Compare job requirements for ML and Data roles") → Higher k (12-15)
+- **List/enumeration requests** (e.g., "List all available positions") → Highest k (18-20)
+
+Respond with ONLY a single integer between 3 and 20."""
+
+    try:
+        top_k_response = openai_client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": top_k_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            max_tokens=10,
+            temperature=0
+        )
+
+        top_k_str = top_k_response.choices[0].message.content.strip()
+        top_k = int(top_k_str)
+
+        # Validate and constrain the top_k value
+        if top_k < 3:
+            top_k = 3
+        elif top_k > 20:
+            top_k = 20
+
+        print(f"Determined optimal top-k: {top_k} for query: '{user_message[:50]}...'")
+        return top_k
+    except Exception as e:
+        print(f"Error determining top-k: {str(e)}, using default value of 10")
+        return 10
+
+
 @app.post("/api/chat")
 async def chat(request: Request):
     """Handle chat messages with OpenAI and RAG"""
@@ -130,6 +218,12 @@ async def chat(request: Request):
         if not user_message:
             return {"error": "No message provided"}
 
+        # Classify the document type(s) based on user query
+        document_types = classify_document_type(user_message)
+
+        # Determine optimal top-k value based on query complexity
+        top_k = determine_optimal_top_k(user_message)
+
         # Generate embedding for the user message
         embedding_response = openai_client.embeddings.create(
             input=user_message,
@@ -137,15 +231,9 @@ async def chat(request: Request):
         )
         query_embedding = embedding_response.data[0].embedding
 
-        # Query rag_content table with cosine distance to get top 10 results
-        rag_results = supabase.rpc(
-            'match_documents_by_document_type',
-            {
-                'query_embedding': query_embedding,
-                'match_count': 10,
-                'query_document_type': 'job'
-            }
-        ).execute()
+        # Query rag_content table with cosine distance using dynamic top-k
+        # Use the new array-based function
+        rag_results = query_rag_content_many_types(query_embedding, top_k, document_types)
 
         # Extract context from RAG results
         context_items = []
@@ -154,7 +242,7 @@ async def chat(request: Request):
                 if item['similarity'] > .3:
                     context_items.append(item.get('context', ''))
 
-        print(len(context_items))
+        print(f"Found {len(context_items)} relevant context items for document_types: {document_types}")
         # Build context string
         rag_context = "\n\n".join(context_items) if context_items else "No relevant context found."
 
@@ -173,7 +261,9 @@ async def chat(request: Request):
 
         return {
             "response": response_message,
-            "rag_results": rag_results.data if rag_results.data else []
+            "rag_results": rag_results.data if rag_results.data else [],
+            "document_types": document_types,
+            "top_k": top_k
         }
 
     except Exception as e:
