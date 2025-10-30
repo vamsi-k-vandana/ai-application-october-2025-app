@@ -136,3 +136,4 @@ The entire application is now served from a single web service!
 ## License
 
 MIT
+Final refresh trigger
