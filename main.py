@@ -9,6 +9,8 @@ from openai import OpenAI
 import os
 import json
 
+
+
 from supabase_lib import query_rag_content, query_rag_content_many_types
 from dotenv import load_dotenv
 
