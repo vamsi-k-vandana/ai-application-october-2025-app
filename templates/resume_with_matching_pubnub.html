@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Resume Parser</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.pubnub.com/sdk/javascript/pubnub.8.2.0.min.js"></script>
     <style>
         body {
             margin: 0;
@@ -318,6 +319,65 @@
         const jobsResults = document.getElementById('jobs-results');
         const profilesResults = document.getElementById('profiles-results');
         let parsedText = '';
+        let pubnub = null;
+
+        // Initialize PubNub
+        async function initPubNub() {
+            try {
+                const response = await fetch('/api/pubnub/config');
+                const config = await response.json();
+
+                pubnub = new PubNub({
+                    publishKey: config.publish_key,
+                    subscribeKey: config.subscribe_key,
+                    userId: 'resume-parser-' + Math.random().toString(36).substr(2, 9)
+                });
+
+                // Subscribe to the response channel
+                pubnub.subscribe({
+                    channels: ['job-responses']
+                });
+
+                // Listen for messages
+                pubnub.addListener({
+                    message: function(event) {
+                        console.log('Received PubNub message:', event.message);
+                        handleResumeResponse(event.message);
+                    }
+                });
+
+                console.log('PubNub initialized and subscribed to job-responses');
+            } catch (error) {
+                console.error('Error initializing PubNub:', error);
+            }
+        }
+
+        // Initialize PubNub when page loads
+        initPubNub();
+
+        // Handle resume response from PubNub
+        function handleResumeResponse(data) {
+            console.log('Handling resume response:', data);
+
+            if (data.error) {
+                showError(data.error);
+                outputBox.className = 'output-box empty';
+                outputBox.innerHTML = 'Parsed resume will appear here...';
+                resultsSection.style.display = 'none';
+                parseBtn.disabled = false;
+                return;
+            }
+
+            if (data.parsed_resume) {
+                parsedText = data.parsed_resume;
+                displayParsedResume(parsedText);
+                displayJobs(data.jobs || []);
+                displayProfiles(data.profiles || []);
+                actionButtons.style.display = 'flex';
+                resultsSection.style.display = 'block';
+                parseBtn.disabled = false;
+            }
+        }
 
         async function parseResume() {
             const htmlContent = htmlInput.value.trim();
@@ -337,7 +397,7 @@
             actionButtons.style.display = 'none';
 
             try {
-                const response = await fetch('/api/parse-resume-with-matching', {
+                const response = await fetch('/api/parse-resume-with-matching-pubnub', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -350,26 +410,15 @@
                 }
 
                 const data = await response.json();
-                
-                if (data.error) {
-                    showError(data.error);
-                    outputBox.className = 'output-box empty';
-                    outputBox.innerHTML = 'Parsed resume will appear here...';
-                    resultsSection.style.display = 'none';
-                } else {
-                    parsedText = data.parsed_resume;
-                    displayParsedResume(parsedText);
-                    displayJobs(data.jobs || []);
-                    displayProfiles(data.profiles || []);
-                    actionButtons.style.display = 'flex';
-                    resultsSection.style.display = 'block';
-                }
+                console.log('Job submitted:', data);
+
+                // Don't disable the button or change state here - wait for PubNub response
+                // The handleResumeResponse function will update the UI when processing completes
             } catch (error) {
                 console.error('Error:', error);
-                showError('Failed to parse resume. Please check your OpenAI API key and try again.');
+                showError('Failed to submit resume for parsing. Please try again.');
                 outputBox.className = 'output-box empty';
                 outputBox.innerHTML = 'Parsed resume will appear here...';
-            } finally {
                 parseBtn.disabled = false;
             }
         }
