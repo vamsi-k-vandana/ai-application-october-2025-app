@@ -29,3 +29,33 @@ def query_rag_content_many_types(query_embedding, match_count, document_types):
         }
     ).execute()
     return rag_results
+def insert_resume(resume_json: dict) -> dict:
+    """
+    Inserts a parsed resume JSON object into the Supabase 'resumes' table.
+
+    Args:
+        resume_json (dict): Resume data matching the JSON schema.
+
+    Returns:
+        dict: The inserted row data from Supabase.
+    """
+    # Ensure valid JSON
+    if not isinstance(resume_json, dict):
+        raise ValueError("resume_json must be a Python dict")
+
+    try:
+        response = (
+            supabase.table("resumes")
+            .insert({"resume": resume_json})
+            .execute()
+        )
+
+        if response.data:
+            print("✅ Resume inserted successfully!")
+            return response.data[0]
+        else:
+            raise Exception(f"Insertion failed: {response}")
+
+    except Exception as e:
+        print(f"❌ Error inserting resume: {e}")
+        raise

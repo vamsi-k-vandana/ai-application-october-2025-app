@@ -129,7 +129,7 @@ Respond with ONLY one word: 'job', 'profile', or 'both'."""
 
     try:
         classification_response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": classification_prompt},
                 {"role": "user", "content": user_message}
@@ -172,9 +172,12 @@ Consider:
 - **Broad/exploratory queries** (e.g., "Tell me about all engineering roles") → Higher k (15-20)
 - **Moderate complexity** (e.g., "What skills do senior data engineers need?") → Medium k (8-12)
 - **Comparison queries** (e.g., "Compare job requirements for ML and Data roles") → Higher k (12-15)
-- **List/enumeration requests** (e.g., "List all available positions") → Highest k (18-20)
-
-Respond with ONLY a single integer between 3 and 20."""
+- **List/enumeration requests** (e.g., "List all available positions") → Highest k (40-50)
+The return structure should be
+{
+  "top_k": 10
+}
+"""
 
     try:
         top_k_response = openai_client.chat.completions.create(
@@ -188,7 +191,9 @@ Respond with ONLY a single integer between 3 and 20."""
         )
 
         top_k_str = top_k_response.choices[0].message.content.strip()
-        top_k = int(top_k_str)
+        json_top_k = json.loads(top_k_str)
+
+        top_k = int(json_top_k['top_k'])
 
         # Validate and constrain the top_k value
         if top_k < 3:
@@ -201,6 +206,88 @@ Respond with ONLY a single integer between 3 and 20."""
     except Exception as e:
         print(f"Error determining top-k: {str(e)}, using default value of 10")
         return 10
+
+
+def rerank_results_gpt(query: str, results: list, top_n: int = None) -> list:
+    """
+    Reranks search results using GPT-3.5 Turbo for improved relevance.
+
+    Args:
+        query: The user's search query
+        results: List of result dictionaries with 'context' field
+        top_n: Number of top results to return (default: return all, sorted)
+
+    Returns:
+        Reranked list of results sorted by relevance score
+    """
+    if not results or not openai_client:
+        return results
+
+    # If we have few results, just return them as-is
+    if len(results) <= 3:
+        for i, result in enumerate(results):
+            result['rerank_score'] = len(results) - i
+        return results
+
+    # Build a prompt asking GPT to rank the results by relevance
+    contexts_with_ids = []
+    for idx, item in enumerate(results):
+        contexts_with_ids.append({
+            "id": idx,
+            "context": item.get('context', '')[:500]  # Limit to first 500 chars to save tokens
+        })
+
+    rerank_prompt = f"""Given the user query and the following search results, rank them by relevance to the query.
+Return ONLY a JSON array of result IDs in order from most relevant to least relevant.
+
+User Query: {query}
+
+Search Results:
+{json.dumps(contexts_with_ids, indent=2)}
+
+Return format: {{"ranked_ids": [2, 0, 1, ...]}}"""
+
+    try:
+        rerank_response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a relevance ranking expert. Analyze search results and rank them by relevance to the user's query."},
+                {"role": "user", "content": rerank_prompt}
+            ],
+            max_tokens=200,
+            temperature=0,
+            response_format={"type": "json_object"}
+        )
+
+        ranking_data = json.loads(rerank_response.choices[0].message.content)
+        ranked_ids = ranking_data.get('ranked_ids', [])
+
+        # Create a mapping of original index to rank score
+        rank_scores = {}
+        for rank, idx in enumerate(ranked_ids):
+            rank_scores[idx] = len(ranked_ids) - rank  # Higher score = more relevant
+
+        # Attach rerank scores to results
+        for i, result in enumerate(results):
+            result['rerank_score'] = rank_scores.get(i, 0)
+
+        # Sort by rerank score (descending)
+        reranked_results = sorted(results, key=lambda x: x['rerank_score'], reverse=True)
+
+        print(f"Reranked {len(results)} results using GPT-3.5 Turbo")
+
+        # Return top_n if specified, otherwise return all
+        if top_n:
+            return reranked_results[:top_n]
+
+        return reranked_results
+
+    except Exception as e:
+        print(f"Error during GPT-3.5 reranking: {str(e)}, returning original order")
+        # Fallback: return original results with default scores
+        for i, result in enumerate(results):
+            result['rerank_score'] = len(results) - i
+        return results
 
 
 @app.post("/api/chat")
@@ -220,10 +307,10 @@ async def chat(request: Request):
 
         # Classify the document type(s) based on user query
         document_types = classify_document_type(user_message)
-
+        print(document_types)
         # Determine optimal top-k value based on query complexity
         top_k = determine_optimal_top_k(user_message)
-
+        # print(top_k)
         # Generate embedding for the user message
         embedding_response = openai_client.embeddings.create(
             input=user_message,
@@ -235,12 +322,18 @@ async def chat(request: Request):
         # Use the new array-based function
         rag_results = query_rag_content_many_types(query_embedding, top_k, document_types)
 
-        # Extract context from RAG results
-        context_items = []
+        # Rerank results using GPT-3.5 Turbo
+
+        # print('before reranking',  rag_results.data)
+        reranked_results = []
         if rag_results.data:
-            for item in rag_results.data:
-                if item['similarity'] > .3:
-                    context_items.append(item.get('context', ''))
+            reranked_results = rerank_results_gpt(user_message, rag_results.data, 5)
+        print('before reranking', reranked_results)
+        # Extract context from reranked RAG results
+        context_items = []
+        if reranked_results:
+            for item in reranked_results:
+                context_items.append(item.get('context', ''))
 
         print(f"Found {len(context_items)} relevant context items for document_types: {document_types}")
         # Build context string
@@ -253,7 +346,6 @@ async def chat(request: Request):
                 {"role": "system", "content": f"You are a senior data engineer who has mastered data engineering. Use the following context to answer questions:\n\n{rag_context}"},
                 {"role": "user", "content": user_message}
             ],
-            max_tokens=300,
             temperature=0
         )
 
@@ -261,7 +353,7 @@ async def chat(request: Request):
 
         return {
             "response": response_message,
-            "rag_results": rag_results.data if rag_results.data else [],
+            "rag_results": reranked_results if reranked_results else [],
             "document_types": document_types,
             "top_k": top_k
         }
@@ -472,6 +564,22 @@ Format the output as clean JSON"""
 
 
 
+@app.post('/api/parse-resume-with-matching-pubnub')
+async def parse_resume_with_matching(request: Request):
+    body = await request.json()
+    html_content = body.get("html_content", "")
+    resume_job = insert_resume_job({'resume_text': html_content})
+
+    envelope = pubnub_client.publish() \
+        .channel('resume-job-channel') \
+        .message({'id': resume_job['id']}) \
+        .sync()
+
+    return {'message': 'Started Pubnub job'}
+
+
+
+
 @app.post("/api/parse-resume")
 async def parse_resume(request: Request):
     """Parse HTML resume/LinkedIn profile using OpenAI"""
@@ -659,6 +767,37 @@ def insert_resume(resume_json: dict) -> dict:
         response = (
             supabase.table("resumes")
             .insert({"resume": resume_json})
+            .execute()
+        )
+
+        if response.data:
+            print("✅ Resume inserted successfully!")
+            return response.data[0]
+        else:
+            raise Exception(f"Insertion failed: {response}")
+
+    except Exception as e:
+        print(f"❌ Error inserting resume: {e}")
+        raise
+
+def insert_resume_job(resume_job_json: dict) -> dict:
+    """
+    Inserts a parsed resume JSON object into the Supabase 'resumes' table.
+
+    Args:
+        resume_json (dict): Resume data matching the JSON schema.
+
+    Returns:
+        dict: The inserted row data from Supabase.
+    """
+    # Ensure valid JSON
+    if not isinstance(resume_job_json, dict):
+        raise ValueError("resume_json must be a Python dict")
+
+    try:
+        response = (
+            supabase.table("resume_job")
+            .insert({"resume_text": resume_job_json['resume_text']})
             .execute()
         )
 
