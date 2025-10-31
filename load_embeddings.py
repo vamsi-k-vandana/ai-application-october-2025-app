@@ -89,6 +89,7 @@ Summary: {profile.get('summary', 'N/A')}
 LinkedIn: {profile.get('linkedin_url', 'N/A')}"""
 
 
+
 def load_vectors_into_supabase(id, embedding, context, user_id, document_type, **kwargs):
     # Insert into Supabase
         data = {
@@ -153,7 +154,6 @@ def load_profiles_into_rag(file_path: str, user_id: int = 1):
         # Generate embedding
         embedding = get_embedding(context)
         load_vectors_into_supabase(profile_id, embedding, context, user_id, "profile")
-
     print(f"Completed loading {len(profiles)} profiles.\n")
 
 def main():

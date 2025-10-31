@@ -109,6 +109,18 @@ async def publish_message(channel: str, message: dict):
         }
 
 
+def query_rag_content(query_embedding, match_content, document_type):
+  rag_results = supabase.rpc(
+            'match_documents_by_document_type',
+            {
+                'query_embedding': query_embedding,
+                'match_count': match_content,
+                'query_document_type': document_type
+            }
+        ).execute()
+  return rag_results
+
+
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request):
     """Render the chat page"""

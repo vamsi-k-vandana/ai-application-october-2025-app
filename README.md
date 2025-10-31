@@ -33,7 +33,10 @@ ai-application-october-2025/
 
 #### Step 1: Create a bare clone
 ```bash
-git clone --bare git@github.com:DataExpert-io/ai-application-october-2025.git
+
+git clone <your-repo-url>
+cd <your-repo-name>
+
 ```
 
 #### Step 2: Create a new private repository on GitHub
