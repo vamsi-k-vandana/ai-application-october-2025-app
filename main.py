@@ -375,7 +375,7 @@ async def resume_with_matching_page(request: Request):
 
 
 @app.get("/resume-with-matching-pubnub", response_class=HTMLResponse)
-async def resume_with_matching_page(request: Request):
+async def resume_with_matching_pubnub_page(request: Request):
     """Render the resume parser page"""
     return templates.TemplateResponse("resume_with_matching_pubnub.html", {"request": request})
 
