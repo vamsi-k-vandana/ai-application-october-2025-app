@@ -374,6 +374,12 @@ async def resume_with_matching_page(request: Request):
     return templates.TemplateResponse("resume_with_matching.html", {"request": request})
 
 
+@app.get("/resume-with-matching-pubnub", response_class=HTMLResponse)
+async def resume_with_matching_page(request: Request):
+    """Render the resume parser page"""
+    return templates.TemplateResponse("resume_with_matching_pubnub.html", {"request": request})
+
+
 @app.post('/api/parse-resume-with-matching')
 async def parse_resume_with_matching(request: Request):
     """Parse HTML resume/LinkedIn profile using OpenAI"""
@@ -570,12 +576,15 @@ async def parse_resume_with_matching(request: Request):
     html_content = body.get("html_content", "")
     resume_job = insert_resume_job({'resume_text': html_content})
 
+    # Publish to the same channel that pubnub_job_processor is listening to
+    job_channel = os.environ.get("PUBNUB_JOB_CHANNEL", "job-requests")
+
     envelope = pubnub_client.publish() \
-        .channel('resume-job-channel') \
+        .channel(job_channel) \
         .message({'id': resume_job['id']}) \
         .sync()
 
-    return {'message': 'Started Pubnub job'}
+    return {'message': 'Started Pubnub job', 'job_id': resume_job['id']}
 
 
 

@@ -121,7 +121,7 @@ class JobProcessor:
 
 {context_text}
 
-Provide helpful, accurate information about the job based on the context provided."""
+Provide helpful, accurate information about the job based on the context provided. Be concise"""
 
             completion = self.openai_client.chat.completions.create(
                 model="gpt-4o",
@@ -129,7 +129,6 @@ Provide helpful, accurate information about the job based on the context provide
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_query}
                 ],
-                max_tokens=500,
                 temperature=0
             )
 
@@ -429,13 +428,23 @@ class PubNubJobListener(SubscribeCallback):
                         profile_items.append(item.get('context', ''))
 
             print(parsed_resume, job_items)
-            insert_resume(json.loads(parsed_resume))
+            resume = insert_resume(json.loads(parsed_resume))
 
-            return {"parsed_resume": parsed_resume, 'jobs': job_items, 'profiles': profile_items}
+            # Publish the full response with parsed resume, jobs, and profiles
+            response_data = {
+                "parsed_resume": parsed_resume,
+                "jobs": job_items,
+                "profiles": profile_items,
+                "resume_id": resume.get('id')
+            }
+            self.publish_response(response_data)
+            return response_data
 
         except Exception as e:
             print(str(e))
-            return {"error": f"Error parsing resume: {str(e)}"}
+            error_response = {"error": f"Error parsing resume: {str(e)}"}
+            self.publish_response(error_response)
+            return error_response
             # Process the job request
             response = self.processor.process_job_request(message.message)
 
