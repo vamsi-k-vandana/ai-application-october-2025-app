@@ -337,7 +337,7 @@
             actionButtons.style.display = 'none';
 
             try {
-                const response = await fetch('/api/parse-resume-with-matching-pubnub', {
+                const response = await fetch('/api/parse-resume-with-matching', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -350,7 +350,7 @@
                 }
 
                 const data = await response.json();
-                console.log(data);
+                
                 if (data.error) {
                     showError(data.error);
                     outputBox.className = 'output-box empty';
