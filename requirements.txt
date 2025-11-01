@@ -7,3 +7,5 @@ pubnub
 openai
 requests
 PyGithub
+pypdf
+Pillow

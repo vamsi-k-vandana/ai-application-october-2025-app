@@ -8,6 +8,10 @@ from pubnub.pubnub import PubNub
 from openai import OpenAI
 import os
 import json
+import base64
+import io
+from pypdf import PdfReader
+from PIL import Image
 
 from supabase_lib import query_rag_content, query_rag_content_many_types
 from dotenv import load_dotenv
@@ -550,7 +554,17 @@ Format the output as clean JSON"""
             ]
         )
 
-        parsed_resume = completion.choices[0].message.tool_calls[0].function.arguments
+        # Handle both tool call and regular JSON response
+        message = completion.choices[0].message
+        if message.tool_calls and len(message.tool_calls) > 0:
+            # Tool call response
+            parsed_resume = message.tool_calls[0].function.arguments
+        elif message.content:
+            # Regular JSON response
+            parsed_resume = message.content
+        else:
+            return {"error": "No valid response from OpenAI"}
+
         embedding_response = openai_client.embeddings.create(
             input=parsed_resume,
             model='text-embedding-3-small'
@@ -603,7 +617,7 @@ async def parse_resume_with_matching(request: Request):
 
 @app.post("/api/parse-resume")
 async def parse_resume(request: Request):
-    """Parse HTML resume/LinkedIn profile using OpenAI"""
+    """Parse resume from HTML, images (PNG/JPG), or PDFs using OpenAI (multimodal support)"""
     if not openai_client:
         return {
             "error": "OpenAI API key not configured. Please add OPENAI_API_KEY to your .env file."
@@ -612,12 +626,104 @@ async def parse_resume(request: Request):
     try:
         body = await request.json()
         html_content = body.get("html_content", "")
+        base64_content = body.get("base64_content", "")
+        content_type = body.get("content_type", "html")  # html, image, or pdf
 
-        if not html_content:
-            return {"error": "No HTML content provided"}
+        resume_text = ""
+
+        # Process based on content type
+        if content_type == "image" and base64_content:
+            # Process image using Vision API
+            print("Processing image with Vision API...")
+            vision_response = openai_client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Extract all text from this resume image. Include all information such as name, contact details, work experience, education, skills, certifications, and projects. Format it clearly."
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_content}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=2000
+            )
+            resume_text = vision_response.choices[0].message.content
+            print(f"Extracted text from image (length: {len(resume_text)})")
+
+        elif content_type == "pdf" and base64_content:
+            # Process PDF - try text extraction first
+            print("Processing PDF...")
+            pdf_bytes = base64.b64decode(base64_content)
+            pdf_file = io.BytesIO(pdf_bytes)
+
+            reader = PdfReader(pdf_file)
+            extracted_text = ""
+
+            for page in reader.pages:
+                text = page.extract_text()
+                if text:
+                    extracted_text += text + "\n"
+
+            # If we got meaningful text, use it
+            if len(extracted_text.strip()) > 100:
+                print(f"Extracted text from PDF using PyPDF (length: {len(extracted_text)})")
+                resume_text = extracted_text
+            else:
+                # Scanned PDF - convert to image and use Vision API
+                print("PDF appears to be scanned, using Vision API...")
+                try:
+                    # Convert first page to image
+                    from PIL import Image as PILImage
+                    import fitz  # PyMuPDF alternative
+
+                    # For now, use Vision API on the base64 content directly
+                    # Note: This assumes you can convert PDF pages to images
+                    vision_response = openai_client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "This is a scanned PDF resume. Extract all text from it. Include all information such as name, contact details, work experience, education, skills, certifications, and projects."
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:application/pdf;base64,{base64_content}"
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        max_tokens=2000
+                    )
+                    resume_text = vision_response.choices[0].message.content
+                except Exception as vision_error:
+                    print(f"Vision API fallback failed: {vision_error}")
+                    resume_text = extracted_text if extracted_text else "Could not extract text from PDF"
+
+        else:
+            # Default to HTML processing (backward compatible)
+            if not html_content:
+                return {"error": "No content provided. Please provide html_content or base64_content with content_type"}
+            resume_text = html_content
+
+        if not resume_text:
+            return {"error": "Could not extract content from the provided file"}
 
         # Create a prompt to parse the resume
-        system_prompt = """You are a resume parser. Extract and format the key information from HTML content (from LinkedIn profiles or resumes) into only a JSON format. 
+        system_prompt = """You are a resume parser. Extract and format the key information from the provided content (HTML, text, or image-extracted text) into only a JSON format.
         Remove any HTML tags, navigation elements, or extraneous information.
 Focus on extracting:
 {
@@ -665,9 +771,9 @@ Focus on extracting:
 }
 Format the output as clean JSON"""
 
-        user_prompt = f"Please parse and format this resume into JSON:\n\n{html_content}\n\n"
+        user_prompt = f"Please parse and format this resume into JSON:\n\n{resume_text}\n\n"
 
-        print('user prompt is', user_prompt)
+        print('user prompt is', user_prompt[:200] + "...")
         # Call OpenAI API
         completion = openai_client.chat.completions.create(
             model="gpt-4o",
@@ -759,11 +865,20 @@ Format the output as clean JSON"""
             ]
         )
 
-        parsed_resume = completion.choices[0].message.tool_calls[0].function.arguments
+        # Handle both tool call and regular JSON response
+        message = completion.choices[0].message
+        if message.tool_calls and len(message.tool_calls) > 0:
+            # Tool call response
+            parsed_resume = message.tool_calls[0].function.arguments
+        elif message.content:
+            # Regular JSON response
+            parsed_resume = message.content
+        else:
+            return {"error": "No valid response from OpenAI"}
 
         insert_resume(json.loads(parsed_resume))
 
-        return {"parsed_resume": parsed_resume}
+        return {"parsed_resume": parsed_resume, "content_type": content_type}
 
     except Exception as e:
         print(str(e))

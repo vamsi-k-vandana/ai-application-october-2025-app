@@ -205,6 +205,19 @@
             margin: 5px 0;
         }
 
+        #file-input-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+            border: 2px dashed #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+
         @media (max-width: 900px) {
             .content-wrapper {
                 grid-template-columns: 1fr;
@@ -220,11 +233,28 @@
 
         <div class="content-wrapper">
             <div class="input-section">
-                <div class="section-title">Input HTML</div>
+                <div class="section-title">
+                    Input Resume
+                    <span style="font-size: 0.85em; color: #999; margin-left: 10px;">
+                        <label style="cursor: pointer;">
+                            <input type="radio" name="input-mode" value="html" checked onchange="switchInputMode('html')"> HTML
+                        </label>
+                        <label style="cursor: pointer; margin-left: 15px;">
+                            <input type="radio" name="input-mode" value="file" onchange="switchInputMode('file')"> Upload File
+                        </label>
+                    </span>
+                </div>
                 <textarea
                     id="html-input"
                     placeholder="Paste your LinkedIn profile HTML or resume HTML here...&#10;&#10;Tip: On LinkedIn, right-click on your profile section and select 'Inspect' or 'View Page Source' to copy the HTML."
                 ></textarea>
+                <div id="file-input-container" style="display: none;">
+                    <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg" style="display: none;" onchange="handleFileSelect(event)">
+                    <button type="button" onclick="document.getElementById('file-input').click()" style="background-color: #6c757d;">
+                        Choose File (PDF, PNG, JPG)
+                    </button>
+                    <div id="file-name" style="margin-top: 10px; color: #666; font-size: 14px;"></div>
+                </div>
                 <button id="parse-btn" onclick="parseResume()">Parse Resume</button>
             </div>
 
@@ -245,18 +275,93 @@
 
     <script>
         const htmlInput = document.getElementById('html-input');
+        const fileInputContainer = document.getElementById('file-input-container');
+        const fileInput = document.getElementById('file-input');
+        const fileNameDisplay = document.getElementById('file-name');
         const outputBox = document.getElementById('output-box');
         const parseBtn = document.getElementById('parse-btn');
         const actionButtons = document.getElementById('action-buttons');
         const errorContainer = document.getElementById('error-container');
         let parsedText = '';
+        let selectedFile = null;
+        let currentInputMode = 'html';
+
+        function switchInputMode(mode) {
+            currentInputMode = mode;
+            if (mode === 'html') {
+                htmlInput.style.display = 'block';
+                fileInputContainer.style.display = 'none';
+                selectedFile = null;
+            } else {
+                htmlInput.style.display = 'none';
+                fileInputContainer.style.display = 'block';
+            }
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            selectedFile = file;
+            fileNameDisplay.textContent = `Selected: ${file.name}`;
+            fileNameDisplay.style.color = '#667eea';
+        }
+
+        function getFileBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => {
+                    // Remove the data:mime;base64, prefix
+                    const base64 = reader.result.split(',')[1];
+                    resolve(base64);
+                };
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        function getContentType(file) {
+            const fileName = file.name.toLowerCase();
+            if (fileName.endsWith('.pdf')) return 'pdf';
+            if (fileName.endsWith('.png') || fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) return 'image';
+            return 'unknown';
+        }
 
         async function parseResume() {
-            const htmlContent = htmlInput.value.trim();
+            let requestBody = {};
 
-            if (!htmlContent) {
-                showError('Please paste some HTML content to parse.');
-                return;
+            if (currentInputMode === 'html') {
+                const htmlContent = htmlInput.value.trim();
+                if (!htmlContent) {
+                    showError('Please paste some HTML content to parse.');
+                    return;
+                }
+                requestBody = {
+                    html_content: htmlContent,
+                    content_type: 'html'
+                };
+            } else {
+                if (!selectedFile) {
+                    showError('Please select a file to upload.');
+                    return;
+                }
+
+                const contentType = getContentType(selectedFile);
+                if (contentType === 'unknown') {
+                    showError('Please select a valid PDF, PNG, or JPG file.');
+                    return;
+                }
+
+                try {
+                    const base64Content = await getFileBase64(selectedFile);
+                    requestBody = {
+                        base64_content: base64Content,
+                        content_type: contentType
+                    };
+                } catch (error) {
+                    showError('Failed to read file. Please try again.');
+                    return;
+                }
             }
 
             // Clear any previous errors
@@ -274,7 +379,7 @@
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ html_content: htmlContent })
+                    body: JSON.stringify(requestBody)
                 });
 
                 if (!response.ok) {
@@ -342,6 +447,9 @@
 
         function clearAll() {
             htmlInput.value = '';
+            fileInput.value = '';
+            selectedFile = null;
+            fileNameDisplay.textContent = '';
             outputBox.className = 'output-box empty';
             outputBox.innerHTML = 'Parsed resume will appear here...';
             actionButtons.style.display = 'none';
